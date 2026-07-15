@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   MapPin,
+  Network,
   BarChart2,
   Bell,
   Settings,
@@ -15,6 +16,7 @@ import { createClient } from '@/lib/supabase/client';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/network', label: 'Network', icon: Network },
   { href: '/sites', label: 'Sites', icon: MapPin },
   { href: '/campaigns', label: 'Campaigns', icon: BarChart2 },
   { href: '/alerts', label: 'Alerts', icon: Bell },
