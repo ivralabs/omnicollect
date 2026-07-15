@@ -1,0 +1,33 @@
+site:
+  api_key: "YOUR_SITE_API_KEY"   # from OmniCollect dashboard
+  name: "Site Name"               # human label only
+
+camera:
+  url: "rtsp://192.168.1.100:554/stream"  # RTSP stream URL
+  fps_capture: 2          # capture 2 frames/sec (every 500ms)
+  reconnect_delay: 10     # seconds before retry on disconnect
+
+detection:
+  model: "yolov8n.pt"     # nano model — fast, good enough for Phase 1
+  confidence: 0.4         # minimum detection confidence
+  classes:                # COCO class IDs to detect
+    - 2   # car
+    - 3   # motorcycle
+    - 5   # bus
+    - 7   # truck
+    - 0   # person
+
+plate:
+  enabled: true
+  api_key: "PLATE_RECOGNIZER_API_KEY"
+  region: "za"            # South Africa
+  sample_rate: 10         # only send 1 in 10 detections to Plate Recognizer (cost control)
+
+aggregation:
+  window_minutes: 15      # aggregate into 15-min windows
+  upload_on_complete: true
+
+cloud:
+  ingest_url: "https://app.omnicollect.io/api/ingest"
+  retry_attempts: 3
+  retry_delay: 30         # seconds

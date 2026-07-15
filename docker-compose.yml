@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  omnicollect-edge:
+    build: .
+    container_name: omnicollect-edge
+    restart: unless-stopped
+    
+    environment:
+      # Site configuration (override config.yaml values)
+      - OMNICOLLECT_SITE_API_KEY=${OMNICOLLECT_SITE_API_KEY}
+      - PLATE_RECOGNIZER_API_KEY=${PLATE_RECOGNIZER_API_KEY}
+      - RTSP_URL=${RTSP_URL:-rtsp://192.168.1.100:554/stream}
+      - OMNICOLLECT_INGEST_URL=${OMNICOLLECT_INGEST_URL:-https://app.omnicollect.io/api/ingest}
+    
+    volumes:
+      # Persistent storage for offline queue
+      - ./data:/data
+      # Mount config.yaml for easy editing
+      - ./config.yaml:/app/config.yaml:ro
+    
+    # Network mode host for easier RTSP access
+    network_mode: host
+    
+    # Resource limits (adjust for Jetson Orin Nano)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
