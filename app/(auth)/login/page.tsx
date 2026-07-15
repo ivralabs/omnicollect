@@ -22,7 +22,7 @@ export default function LoginPage() {
         <div className="bg-white/5 border border-white/10 rounded-2xl p-8">
           <h1 className="text-lg font-semibold text-white mb-1">Sign in to your account</h1>
           <p className="text-sm text-white/50 mb-6">
-            We&apos;ll send you a magic link — no password needed.
+            Sign in to your OmniCollect account.
           </p>
           <Suspense>
             <LoginForm />
