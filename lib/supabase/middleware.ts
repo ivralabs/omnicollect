@@ -31,9 +31,12 @@ export async function updateSession(request: NextRequest) {
   response.headers.set('x-pathname', request.nextUrl.pathname);
 
   const url = request.nextUrl.clone();
-  const protectedPrefixes = ['/dashboard', '/sites', '/campaigns', '/alerts', '/settings'];
+  const protectedPrefixes = ['/dashboard', '/sites', '/campaigns', '/alerts', '/settings', '/network'];
   const isProtected = protectedPrefixes.some((p) => url.pathname.startsWith(p));
-  const isAuthRoute = url.pathname === '/login' || url.pathname.startsWith('/login/');
+  // /login/confirm is the PKCE callback — must NOT be treated as an auth route
+  // (user is not yet set when it lands here; the route handler exchanges the code)
+  const isAuthRoute = url.pathname === '/login' && !url.pathname.startsWith('/login/confirm');
+  const isConfirmRoute = url.pathname.startsWith('/login/confirm');
 
   if (!user && isProtected) {
     url.pathname = '/login';
@@ -45,6 +48,11 @@ export async function updateSession(request: NextRequest) {
     url.pathname = '/dashboard';
     url.searchParams.delete('redirect');
     return NextResponse.redirect(url);
+  }
+
+  // Let /login/confirm pass through freely — the route handler exchanges the code
+  if (isConfirmRoute) {
+    return response;
   }
 
   return response;
