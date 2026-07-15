@@ -33,9 +33,9 @@ class Config:
         if os.getenv('OMNICOLLECT_SITE_API_KEY'):
             self._config['site']['api_key'] = os.getenv('OMNICOLLECT_SITE_API_KEY')
         
-        # Plate Recognizer API key
-        if os.getenv('PLATE_RECOGNIZER_API_KEY'):
-            self._config['plate']['api_key'] = os.getenv('PLATE_RECOGNIZER_API_KEY')
+        # Plate model path override (optional — defaults to ./models/yolov8n-plate.pt)
+        if os.getenv('PLATE_MODEL_PATH'):
+            self._config['plate']['model_path'] = os.getenv('PLATE_MODEL_PATH')
         
         # Camera URL (allows RTSP_URL env var)
         if os.getenv('RTSP_URL'):
@@ -93,21 +93,36 @@ class Config:
     def plate_enabled(self) -> bool:
         """Whether plate recognition is enabled."""
         return self._config['plate']['enabled']
-    
+
     @property
-    def plate_api_key(self) -> str:
-        """Plate Recognizer API key."""
-        return self._config['plate']['api_key']
-    
+    def plate_model_path(self) -> str:
+        """Path to YOLOv8 plate detection model (.pt file)."""
+        return self._config['plate']['model_path']
+
     @property
-    def plate_region(self) -> str:
-        """Region for plate recognition (e.g., 'za' for South Africa)."""
-        return self._config['plate']['region']
-    
+    def plate_use_gpu(self) -> bool:
+        """Use GPU (CUDA) for plate detection and OCR."""
+        return self._config['plate'].get('use_gpu', True)
+
+    @property
+    def plate_ocr_gpu(self) -> bool:
+        """Use GPU (CUDA) specifically for PaddleOCR."""
+        return self._config['plate'].get('ocr_gpu', True)
+
+    @property
+    def plate_confidence(self) -> float:
+        """Minimum confidence for plate region detection."""
+        return self._config['plate'].get('confidence', 0.4)
+
     @property
     def plate_sample_rate(self) -> int:
-        """Process 1 in N detections for plates (cost control)."""
-        return self._config['plate']['sample_rate']
+        """Process 1 in N vehicle detections for plates."""
+        return self._config['plate'].get('sample_rate', 1)
+
+    @property
+    def plate_fallback_full_crop(self) -> bool:
+        """OCR full vehicle crop when plate region not detected."""
+        return self._config['plate'].get('fallback_full_crop', True)
     
     # Aggregation config
     @property

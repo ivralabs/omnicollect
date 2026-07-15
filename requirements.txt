@@ -1,5 +1,12 @@
 ultralytics>=8.0.0
 opencv-python-headless>=4.8.0
-requests>=2.31.0
 pyyaml>=6.0
 numpy>=1.24.0
+# On-device ALPR — replaces Plate Recognizer API (zero monthly cost)
+# NOTE for Jetson Orin Nano: install the ARM-optimised Paddle build.
+# Standard pip paddlepaddle-gpu may not work on aarch64 JetPack.
+# Use the Paddle JetPack wheel from:
+#   https://www.paddlepaddle.org.cn/install/quick?hardware=Jetson
+# or the nvcr.io/nvidia/paddlepaddle container as a base image.
+paddlepaddle-gpu>=2.6.0
+paddleocr>=2.7.0

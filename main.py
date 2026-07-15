@@ -101,14 +101,21 @@ class OmniCollectEdgeAgent:
         self.colour_classifier = ColourClassifier()
         self.logger.info("Colour classifier initialized", extra={"event": "classifier_ready"})
         
-        # Plate processor (optional, depends on config)
+        # Plate processor — on-device YOLOv8 + PaddleOCR (no API key required)
         self.plate_processor: Optional[PlateProcessor] = None
-        if config.plate_enabled and config.plate_api_key != "PLATE_RECOGNIZER_API_KEY":
+        if config.plate_enabled:
+            from plate.model_manager import ModelManager
+            model_mgr = ModelManager(model_dir="./models")
+            model_path = model_mgr.ensure_plate_model()
             self.plate_processor = PlateProcessor(
-                api_key=config.plate_api_key,
-                region=config.plate_region
+                model_path=model_path,
+                use_gpu=config.plate_use_gpu,
+                confidence=config.plate_confidence,
             )
-            self.logger.info("Plate processor initialized", extra={"event": "plate_ready"})
+            self.logger.info(
+                f"Plate processor initialized (on-device, model={model_path})",
+                extra={"event": "plate_ready"}
+            )
         else:
             self.logger.info("Plate processing disabled", extra={"event": "plate_disabled"})
         
@@ -210,7 +217,7 @@ class OmniCollectEdgeAgent:
                     self.plate_sample_counter = 0
                     # Process plate in try-except to prevent crash on API failure
                     try:
-                        result = self.plate_processor.process(crop)
+                        result = self.plate_processor.process(crop, detection.class_name)
                         if result:
                             plate_hash = result.plate_hash
                     except Exception as e:

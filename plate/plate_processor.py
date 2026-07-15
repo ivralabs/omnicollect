@@ -1,168 +1,160 @@
 """
-Plate Recognizer API integration + SHA-256 hashing.
+On-device license plate processing pipeline.
 
-CRITICAL PRIVACY REQUIREMENT:
-Raw plate text is NEVER stored, logged, or transmitted from this device.
-Plates are hashed immediately upon receipt from the API, and only the SHA-256
-hash is retained. This ensures POPIA compliance by design.
+Replaces the Plate Recognizer API entirely.
+Pipeline: vehicle crop → plate region detection → OCR → SHA-256 hash
+
+PRIVACY DESIGN (POPIA compliant by design):
+- Raw plate text NEVER leaves this module
+- Raw plate text is NEVER logged
+- Raw plate text is NEVER stored to disk
+- Raw plate text NEVER appears in any return value
+- Only the SHA-256 hash is used outside this module
+- Raw text exists in memory only for the microseconds between OCR and hash
 """
+
 import hashlib
-import io
-import base64
-from typing import Optional
+import logging
 from dataclasses import dataclass
-import requests
-import cv2
+from typing import Optional
+
 import numpy as np
+
+from .plate_detector import PlateDetector
+from .ocr_engine import OCREngine
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class PlateResult:
-    """Result from plate processing — hash only, no raw text."""
-    plate_hash: str      # SHA-256 of raw plate (lowercase, stripped)
-    vehicle_class: str   # from Plate Recognizer response (e.g., 'Car', 'Truck')
-    confidence: float
+    """Result from on-device plate processing — hash only, never raw text."""
+    plate_hash: str       # SHA-256 of normalised plate text (uppercase, no spaces)
+    vehicle_class: str    # passed in from YOLOv8 vehicle detector
+    confidence: float     # OCR confidence score (0.0–1.0)
+    is_sa_plate: bool     # True if text matched a known SA plate pattern
 
 
 class PlateProcessor:
     """
-    Process vehicle images to extract license plates.
-    
-    PRIVACY DESIGN:
-    - Sends image to Plate Recognizer API
-    - Receives plate text from API
-    - Immediately hashes the text using SHA-256
-    - Discards raw text before any storage or logging
-    - Only the hash is stored/returned
+    On-device license plate processing pipeline.
+
+    No external API calls. Runs entirely on Jetson hardware.
+
+    Architecture:
+        vehicle_crop → PlateDetector (YOLOv8) → plate_region
+                     → [fallback: full crop if no region found]
+                     → OCREngine (PaddleOCR) → raw_text  ← PRIVACY BOUNDARY
+                     → hash_plate() → plate_hash
+                     → PlateResult (hash only)
     """
-    
-    PLATE_RECOGNIZER_URL = "https://api.platerecognizer.com/v1/plate-reader/"
-    
-    def __init__(self, api_key: str, region: str = 'za'):
+
+    def __init__(self, model_path: str, use_gpu: bool = True, confidence: float = 0.4):
         """
-        Initialize plate processor.
-        
+        Initialize the on-device ALPR pipeline.
+
         Args:
-            api_key: Plate Recognizer API key
-            region: Region code for plates (default: 'za' for South Africa)
+            model_path: Path to YOLOv8 plate detection model (.pt)
+            use_gpu:    Use CUDA for both YOLOv8 and PaddleOCR
+            confidence: Minimum detection confidence for plate region
         """
-        self.api_key = api_key
-        self.region = region
-        self.headers = {
-            "Authorization": f"Token {api_key}"
-        }
-    
-    def process(self, vehicle_crop: np.ndarray) -> Optional[PlateResult]:
+        self.detector = PlateDetector(model_path=model_path, confidence=confidence)
+        self.ocr = OCREngine(use_gpu=use_gpu)
+
+        mode = "fallback (full-crop OCR)" if self.detector.is_fallback else "plate-region detection + OCR"
+        logger.info(f"PlateProcessor initialized — mode: {mode}, GPU={use_gpu}")
+
+    def process(self, vehicle_crop: np.ndarray, vehicle_class: str = "unknown") -> Optional[PlateResult]:
         """
-        Process a vehicle image to extract and hash the license plate.
-        
-        CRITICAL: Raw plate text is NEVER stored or transmitted from this method.
-        The text is immediately hashed, and only the hash is returned.
-        
+        Process a vehicle crop through the full on-device ALPR pipeline.
+
+        Pipeline steps:
+        1. Detect plate region within vehicle crop (YOLOv8)
+        2. If no region detected, fall back to full vehicle crop
+        3. Run PaddleOCR on the plate crop
+        4. Clean and validate the OCR output as an SA plate
+        5. Hash immediately — PRIVACY BOUNDARY
+        6. Discard raw text
+        7. Return PlateResult with hash only
+
+        # PRIVACY: raw plate text exists only in step 3–5 (microseconds in memory)
+        # It is NEVER logged, stored, returned, or visible outside this method.
+
         Args:
-            vehicle_crop: Cropped OpenCV image (BGR) of a vehicle
-        
+            vehicle_crop:  Cropped BGR image of a vehicle (from VehicleDetector.get_crop)
+            vehicle_class: Vehicle type label (e.g. 'car', 'truck')
+
         Returns:
-            PlateResult with hash only, or None if no plate found or API error
+            PlateResult with plate_hash, or None if no valid plate found
         """
-        if vehicle_crop.size == 0:
+        if vehicle_crop is None or vehicle_crop.size == 0:
             return None
-        
-        try:
-            # Encode image to JPEG for API
-            _, buffer = cv2.imencode('.jpg', vehicle_crop)
-            if buffer is None:
-                return None
-            
-            # Send to Plate Recognizer API
-            files = {
-                'upload': ('vehicle.jpg', io.BytesIO(buffer), 'image/jpeg')
-            }
-            data = {
-                'regions': self.region,  # e.g., 'za' for South Africa
-            }
-            
-            response = requests.post(
-                self.PLATE_RECOGNIZER_URL,
-                headers=self.headers,
-                files=files,
-                data=data,
-                timeout=10
-            )
-            
-            if response.status_code != 200:
-                return None
-            
-            result = response.json()
-            
-            # Check if any plates were found
-            if not result.get('results') or len(result['results']) == 0:
-                return None
-            
-            # Get the first plate result (highest confidence)
-            plate_data = result['results'][0]
-            raw_plate = plate_data.get('plate', '')
-            
-            # PRIVACY CRITICAL: Immediately hash the raw plate text
-            # The raw text is never stored, logged, or retained in any way
-            if not raw_plate:
-                return None
-            
-            # Hash immediately — raw text is discarded after this line
-            plate_hash = self.hash_plate(raw_plate)
-            
-            # Get vehicle class if available, default to 'unknown'
-            vehicle_class = plate_data.get('vehicle', {}).get('type', 'Car')
-            if not vehicle_class:
-                vehicle_class = 'unknown'
-            
-            confidence = plate_data.get('score', 0.0)
-            
-            # Return result with hash only — no raw plate text
-            return PlateResult(
-                plate_hash=plate_hash,
-                vehicle_class=vehicle_class,
-                confidence=confidence
-            )
-            
-        except requests.RequestException:
-            # Network error — don't crash the pipeline
+
+        # Step 1: Try to detect the plate region
+        plate_region = self.detector.detect(vehicle_crop)
+
+        if plate_region is not None:
+            ocr_crop = plate_region.crop
+            detect_confidence = plate_region.confidence
+        else:
+            # Step 2: Fallback — run OCR on full vehicle crop
+            ocr_crop = vehicle_crop
+            detect_confidence = 0.0
+
+        # Step 3: Run OCR on the plate crop
+        # PRIVACY: raw plate text — hash immediately below
+        raw_plate = self.ocr.extract_text(ocr_crop)  # returns normalised text or None
+
+        if not raw_plate:
             return None
-        except Exception:
-            # Any other error — don't crash the pipeline
-            return None
-    
+
+        # Step 4: Validate (clean_plate already ran inside extract_text,
+        # but we do a final check — is_sa_plate is already True here
+        # since extract_text returns None for non-SA plates)
+        is_sa = True  # extract_text only returns text matching SA patterns
+
+        # Step 5 + 6: Hash immediately — PRIVACY BOUNDARY
+        # PRIVACY: raw plate text — hash immediately
+        plate_hash = self.hash_plate(raw_plate)
+        # raw_plate goes out of scope here — available for GC
+
+        # Step 7: Return hash only
+        return PlateResult(
+            plate_hash=plate_hash,
+            vehicle_class=vehicle_class,
+            confidence=detect_confidence if plate_region else 0.5,
+            is_sa_plate=is_sa,
+        )
+
+    def process_batch(self, vehicle_crops: list[np.ndarray], vehicle_class: str = "unknown") -> list[Optional[PlateResult]]:
+        """
+        Process multiple vehicle crops.
+
+        Args:
+            vehicle_crops: List of BGR vehicle images
+            vehicle_class: Vehicle type for all crops in this batch
+
+        Returns:
+            List of PlateResult or None, same length as input
+        """
+        return [self.process(crop, vehicle_class) for crop in vehicle_crops]
+
     @staticmethod
-    def hash_plate(raw_plate: str) -> str:
+    def hash_plate(normalised_plate: str) -> str:
         """
-        Hash a raw license plate using SHA-256.
-        
-        This is the ONLY place where raw plate text exists in memory.
-        The hash is computed and the raw text is immediately available
-        for garbage collection.
-        
-        Normalization: lowercase, stripped of whitespace
-        
+        Hash a normalised plate string using SHA-256.
+
+        Normalisation: uppercase, stripped of whitespace.
+        Consistent hashing: same plate always produces same hash across sessions.
+
+        # PRIVACY: raw plate text — hash immediately (this IS the hash function)
+
         Args:
-            raw_plate: Raw license plate text from OCR
-        
+            normalised_plate: Cleaned plate text (e.g. "CA123456")
+
         Returns:
-            SHA-256 hexadecimal hash string
+            SHA-256 hex digest string (64 characters)
         """
-        # Normalize: lowercase, strip whitespace
-        normalized = raw_plate.lower().strip()
-        # Compute SHA-256 hash
-        return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
-    
-    def process_batch(self, vehicle_crops: list[np.ndarray]) -> list[Optional[PlateResult]]:
-        """
-        Process multiple vehicle images. Note: Plate Recognizer API
-        doesn't support true batching, so this just loops.
-        
-        Args:
-            vehicle_crops: List of cropped vehicle images
-        
-        Returns:
-            List of PlateResult objects or None (same length as input)
-        """
-        return [self.process(crop) for crop in vehicle_crops]
+        # PRIVACY: raw plate text — hash immediately
+        canonical = normalised_plate.upper().strip()
+        return hashlib.sha256(canonical.encode('utf-8')).hexdigest()

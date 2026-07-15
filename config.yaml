@@ -19,9 +19,13 @@ detection:
 
 plate:
   enabled: true
-  api_key: "PLATE_RECOGNIZER_API_KEY"
-  region: "za"            # South Africa
-  sample_rate: 10         # only send 1 in 10 detections to Plate Recognizer (cost control)
+  model_path: "./models/yolov8n-plate.pt"   # downloaded on first run (see plate/model_manager.py)
+  use_gpu: true                               # use Jetson CUDA — set false if running CPU-only
+  confidence: 0.4
+  ocr_gpu: true
+  sample_rate: 1                              # process EVERY vehicle (no API cost — fully on-device)
+  fallback_full_crop: true                    # OCR full vehicle crop if plate region not detected
+  # No API key needed — fully on-device YOLOv8 + PaddleOCR
 
 aggregation:
   window_minutes: 15      # aggregate into 15-min windows

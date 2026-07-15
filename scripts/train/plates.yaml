@@ -1,0 +1,19 @@
+# plates.yaml — YOLOv8 dataset config for South African license plate detection
+#
+# Update 'path' to the absolute path of your dataset directory before training.
+#
+# Directory structure expected:
+#   <path>/images/train/    (80% of images)
+#   <path>/images/val/      (20% of images)
+#   <path>/labels/train/    (YOLO format .txt files)
+#   <path>/labels/val/
+
+path: /data/sa-plates-dataset   # <-- UPDATE THIS
+
+train: images/train
+val: images/val
+
+# Single class: license plate
+nc: 1
+names:
+  0: plate
