@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { CheckCircle, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -15,13 +14,16 @@ export default function ResolveAlertButton({ alertId }: Props) {
 
   async function handleResolve() {
     setLoading(true);
-    const supabase = createClient();
-    await supabase
-      .from('site_alerts')
-      .update({ resolved_at: new Date().toISOString() })
-      .eq('id', alertId);
-    router.refresh();
-    setLoading(false);
+    try {
+      await fetch(`/api/alerts/${alertId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolved: true }),
+      });
+      router.refresh();
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

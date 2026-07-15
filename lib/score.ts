@@ -107,9 +107,11 @@ export async function recalculateScoreFromReadings(readings: Array<{
   const stddev = Math.sqrt(variance);
   const dailyCv = mean > 0 ? stddev / mean : 0;
 
-  // TODO: replace hardcoded network averages with real network stats from DB
-  const networkAvgVehicles = totalVehicles; // normalise to 1.0 until network data is available
-  const networkAvgDwellSecs = avgDwellSecs;
+  // Use 2× the site's own average as a conservative network benchmark
+  // until real cross-network data is available from multiple sites.
+  // This ensures a site isn't scoring 100/100 by default.
+  const networkAvgVehicles = totalVehicles > 0 ? totalVehicles * 1.5 : 1;
+  const networkAvgDwellSecs = avgDwellSecs > 0 ? avgDwellSecs * 1.5 : 1;
 
   return calculateScore({
     totalVehicles,

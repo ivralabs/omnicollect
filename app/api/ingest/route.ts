@@ -140,23 +140,20 @@ export async function POST(request: NextRequest) {
 
       await svc.from('sites').update({ omnicollect_score: newScore }).eq('id', site.id);
 
-      // Anomaly detection: vehicle_count < 50% of 7-day average for this hour
-      const currentHour = new Date(window_start).getHours();
-      const { data: historicalSameHour } = await svc
+      // Anomaly detection: vehicle_count < 50% of same-hour 7-day average
+      const windowHour = new Date(body.window_start).getUTCHours();
+      const { data: historicalReadings } = await svc
         .from('site_readings')
-        .select('vehicle_count')
+        .select('vehicle_count, window_start')
         .eq('site_id', site.id)
-        .gte('window_start', sevenDaysAgo)
-        // Filter by hour using Postgres cast — using gte/lte window approach
-        .not('id', 'is', null); // base filter
+        .gte('window_start', sevenDaysAgo);
 
-      // Client-side filter for same hour of day
-      const sameHourReadings = (historicalSameHour ?? []).filter((r) => {
-        // We don't have window_start here — use all readings for a simpler 7-day average
-        return true;
+      // Filter client-side to same hour of day (UTC)
+      const sameHourReadings = (historicalReadings ?? []).filter((r) => {
+        return new Date(r.window_start).getUTCHours() === windowHour;
       });
 
-      if (sameHourReadings.length >= 5) {
+      if (sameHourReadings.length >= 3) {
         const avg7DayVehicles =
           sameHourReadings.reduce((s: number, r: { vehicle_count: number }) => s + (r.vehicle_count ?? 0), 0) /
           sameHourReadings.length;

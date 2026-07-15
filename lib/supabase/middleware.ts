@@ -35,7 +35,8 @@ export async function updateSession(request: NextRequest) {
   const isProtected = protectedPrefixes.some((p) => url.pathname.startsWith(p));
   // /login/confirm is the PKCE callback — must NOT be treated as an auth route
   // (user is not yet set when it lands here; the route handler exchanges the code)
-  const isAuthRoute = url.pathname === '/login' && !url.pathname.startsWith('/login/confirm');
+  const isAuthRoute = url.pathname === '/login';
+  // isConfirmRoute already handles /login/confirm separately
   const isConfirmRoute = url.pathname.startsWith('/login/confirm');
 
   if (!user && isProtected) {

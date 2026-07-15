@@ -68,7 +68,7 @@ export default async function CampaignJourneyPage({ params }: Props) {
       </div>
 
       {/* Scoped to campaign window */}
-      <NetworkClient days={days} />
+      <NetworkClient days={days} dateFrom={campaign.start_date} dateTo={campaign.end_date ?? new Date().toISOString()} />
     </div>
   );
 }

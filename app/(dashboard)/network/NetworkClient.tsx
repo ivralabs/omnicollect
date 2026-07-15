@@ -222,7 +222,7 @@ interface Props {
   dateTo?: string;
 }
 
-export default function NetworkClient({ days = 30 }: Props) {
+export default function NetworkClient({ days = 30, dateFrom, dateTo }: Props) {
   const [stats, setStats] = useState<NetworkStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -230,7 +230,11 @@ export default function NetworkClient({ days = 30 }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/network/stats?days=${days}`);
+        const url =
+          dateFrom && dateTo
+            ? `/api/network/stats?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`
+            : `/api/network/stats?days=${days}`;
+        const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json() as NetworkStats;
         setStats(data);
@@ -240,7 +244,7 @@ export default function NetworkClient({ days = 30 }: Props) {
         setLoading(false);
       }
     })();
-  }, [days]);
+  }, [days, dateFrom, dateTo]);
 
   if (loading) {
     return (

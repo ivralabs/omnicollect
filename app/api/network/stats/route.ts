@@ -8,21 +8,16 @@ export async function GET(req: NextRequest) {
     const svc = createServiceClient();
 
     const url = new URL(req.url);
+    const dateFrom = url.searchParams.get('dateFrom');
+    const dateTo = url.searchParams.get('dateTo');
     const days = parseInt(url.searchParams.get('days') ?? '30', 10);
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-    // ── 1. Unique vehicles across network ────────────────────────────────────
-    const { data: uniqueData, error: e1 } = await svc.rpc('network_unique_vehicles', {
-      p_tenant_id: tenant_id,
-      p_since: since,
-    });
-    // Fallback: raw query via from()
+    // If explicit date range provided, use it; otherwise compute from `days`
+    const since = dateFrom ?? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const until = dateTo ?? new Date().toISOString();
+
+    // ── 1. Unique vehicles — computed via JS aggregation below
     let unique_vehicles = 0;
-    if (e1 || uniqueData === null) {
-      // Use a subquery via JS aggregation below
-    } else {
-      unique_vehicles = Number(uniqueData) || 0;
-    }
 
     // ── 2. All plate sightings for this tenant in window (for JS aggregation) ─
     const { data: sightings } = await svc
@@ -38,7 +33,8 @@ export async function GET(req: NextRequest) {
           return (data ?? []).map((s: { id: string }) => s.id);
         })()
       )
-      .gte('seen_at', since);
+      .gte('seen_at', since)
+      .lte('seen_at', until);
 
     // ── 3. Fetch site names ───────────────────────────────────────────────────
     const { data: sitesData } = await svc
@@ -79,25 +75,28 @@ export async function GET(req: NextRequest) {
     for (const [plate, sites] of plateToSites.entries()) {
       const sitesArr = Array.from(sites);
       for (let i = 0; i < sitesArr.length; i++) {
-        for (let j = 0; j < sitesArr.length; j++) {
-          if (i === j) continue;
-          const key = `${sitesArr[i]}::${sitesArr[j]}`;
+        for (let j = i + 1; j < sitesArr.length; j++) {
+          // Canonical key (sorted) so A::B and B::A are the same pair
+          const key = [sitesArr[i], sitesArr[j]].sort().join('::');
           if (!overlapMap.has(key)) overlapMap.set(key, new Set());
           overlapMap.get(key)!.add(plate);
         }
       }
     }
 
-    const overlap_matrix = Array.from(overlapMap.entries()).map(([key, plates]) => {
+    // For each canonical pair, emit two entries (A→B and B→A) so the
+    // symmetric matrix lookup in the UI works with both key directions.
+    const overlap_matrix: Array<{
+      site_a_id: string; site_a_name: string;
+      site_b_id: string; site_b_name: string;
+      shared_vehicles: number;
+    }> = [];
+    for (const [key, plates] of overlapMap.entries()) {
       const [a, b] = key.split('::');
-      return {
-        site_a_id: a,
-        site_a_name: siteMap[a] ?? a,
-        site_b_id: b,
-        site_b_name: siteMap[b] ?? b,
-        shared_vehicles: plates.size,
-      };
-    });
+      const count = plates.size;
+      overlap_matrix.push({ site_a_id: a, site_a_name: siteMap[a] ?? a, site_b_id: b, site_b_name: siteMap[b] ?? b, shared_vehicles: count });
+      overlap_matrix.push({ site_a_id: b, site_a_name: siteMap[b] ?? b, site_b_id: a, site_b_name: siteMap[a] ?? a, shared_vehicles: count });
+    }
 
     // ── 6. Frequency distribution ────────────────────────────────────────────
     const freqMap = new Map<number, number>();
