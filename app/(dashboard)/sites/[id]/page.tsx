@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Car, Eye, Clock, TrendingUp, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Car, Eye, Clock, TrendingUp, AlertTriangle, Settings } from 'lucide-react';
 import { requireTenant } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/service';
 import { formatLastSeen, deviceStatus } from '@/lib/utils';
@@ -140,6 +140,13 @@ export default async function SitePage({ params }: Props) {
             {site.address && <p className="text-sm text-white/40 mt-1">{site.address}</p>}
             <p className="text-xs text-white/30 mt-1">Last seen {formatLastSeen(site.last_seen_at)}</p>
           </div>
+          <Link
+            href={`/sites/${site.id}/settings`}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm font-medium transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+            Settings
+          </Link>
         </div>
       </div>
 
